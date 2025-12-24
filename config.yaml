@@ -1,0 +1,41 @@
+role:
+  title_all_of:
+    - Registered Nurse
+  title_any_of:
+    - Operating Room
+    - Surgical
+  employment_all_of:
+    - Full-Time
+    - Permanent
+
+output:
+  dir: output
+  json: jobs.json
+  csv: jobs.csv
+  last_json: last_jobs.json
+  seen_urls: seen_urls.json
+
+scrape:
+  timeout_seconds: 30
+  retry_attempts: 2
+  user_agent: "Mozilla/5.0 (compatible; nurseTracker/1.0)"
+  max_pages: 50
+  workday_page_size: 50
+  playwright_expand_rows: true
+
+email:
+  include_all_results: false
+
+hospitals:
+  - hospital: Lakeridge Health
+    type: erecruit
+    url: https://careers.lakeridgehealth.on.ca/eRecruit/
+  - hospital: Markham Stouffville (Oak Valley Health)
+    type: workday
+    url: https://oakvalleyhealth.wd10.myworkdayjobs.com/en-US/OakValleyHealth
+  - hospital: Scarborough General (SHN)
+    type: workday
+    url: https://shn.wd10.myworkdayjobs.com/SHN_External_Career_Site
+  - hospital: North York General Hospital
+    type: njoyn
+    url: https://clients.njoyn.com/cl4/xweb/xweb.asp?CLID=77108&page=joblisting&lang=1

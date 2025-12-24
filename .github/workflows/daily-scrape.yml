@@ -1,0 +1,64 @@
+name: Daily scrape
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # GitHub cron is UTC
+    - cron: "10 12 * * *"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore seen URLs cache
+        uses: actions/cache@v4
+        with:
+          path: output/seen_urls.json
+          key: nurseTracker-seen-urls
+
+      # Only needed if you set USE_PLAYWRIGHT=true for JS-rendered boards.
+      - name: Install Playwright (optional)
+        if: ${{ vars.USE_PLAYWRIGHT == 'true' }}
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run scraper (send email)
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_CC: ${{ secrets.EMAIL_CC }}
+          EMAIL_SUBJECT_PREFIX: ${{ secrets.EMAIL_SUBJECT_PREFIX }}
+          EMAIL_INCLUDE_ALL_RESULTS: ${{ secrets.EMAIL_INCLUDE_ALL_RESULTS }}
+          USE_PLAYWRIGHT: ${{ vars.USE_PLAYWRIGHT }}
+        run: |
+          python3 controller.py --config config.yaml --send-email
+
+      - name: Upload outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs
+          path: |
+            output/
+            logs/
+          if-no-files-found: ignore
