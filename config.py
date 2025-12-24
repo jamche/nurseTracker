@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-import yaml
-
 
 HospitalType = Literal["workday", "njoyn", "erecruit"]
 _HOSPITAL_TYPES: set[str] = {"workday", "njoyn", "erecruit"}
@@ -20,9 +18,9 @@ class HospitalConfig:
 
 @dataclass(frozen=True)
 class RoleConfig:
-    title_all_of: list[str]
-    title_any_of: list[str]
-    employment_all_of: list[str]
+    title_groups_all: list[list[str]]
+    employment_any_of: list[str]
+    employment_exclude_any_of: list[str]
 
 
 @dataclass(frozen=True)
@@ -32,6 +30,7 @@ class OutputConfig:
     csv: str
     last_json: str
     seen_urls: str
+    run_report: str
 
 
 @dataclass(frozen=True)
@@ -42,6 +41,8 @@ class ScrapeConfig:
     max_pages: int
     workday_page_size: int
     playwright_expand_rows: bool
+    enrich_detail_titles: bool
+    enrich_detail_max_requests: int
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,11 @@ def _require_dict(obj: Any, path: str) -> dict[str, Any]:
 
 
 def load_config(path: str | Path) -> AppConfig:
+    try:
+        import yaml  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError("Missing dependency PyYAML. Install with `pip install -r requirements.txt`.") from e
+
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     root = _require_dict(raw, "root")
 
@@ -73,10 +79,31 @@ def load_config(path: str | Path) -> AppConfig:
     scrape_raw = _require_dict(root.get("scrape"), "scrape")
     email_raw = _require_dict(root.get("email", {}), "email")
 
+    title_groups_all = role_raw.get("title_groups_all")
+    if title_groups_all is None:
+        # Back-compat: interpret previous schema (title_all_of + title_any_of).
+        all_of = list(role_raw.get("title_all_of") or [])
+        any_of = list(role_raw.get("title_any_of") or [])
+        title_groups_all = []
+        if all_of:
+            title_groups_all.append(all_of)
+        if any_of:
+            title_groups_all.append(any_of)
+
+    if not isinstance(title_groups_all, list):
+        raise ValueError("Expected role.title_groups_all to be a list of lists")
+    parsed_groups: list[list[str]] = []
+    for i, g in enumerate(title_groups_all):
+        if not isinstance(g, list):
+            raise ValueError(f"Expected role.title_groups_all[{i}] to be a list")
+        parsed_groups.append([str(x) for x in g if str(x).strip()])
+
     role = RoleConfig(
-        title_all_of=list(role_raw.get("title_all_of") or []),
-        title_any_of=list(role_raw.get("title_any_of") or []),
-        employment_all_of=list(role_raw.get("employment_all_of") or []),
+        title_groups_all=parsed_groups,
+        employment_any_of=[str(x) for x in (role_raw.get("employment_any_of") or []) if str(x).strip()],
+        employment_exclude_any_of=[
+            str(x) for x in (role_raw.get("employment_exclude_any_of") or []) if str(x).strip()
+        ],
     )
     output = OutputConfig(
         dir=Path(str(output_raw.get("dir", "output"))),
@@ -84,6 +111,7 @@ def load_config(path: str | Path) -> AppConfig:
         csv=str(output_raw.get("csv", "jobs.csv")),
         last_json=str(output_raw.get("last_json", "last_jobs.json")),
         seen_urls=str(output_raw.get("seen_urls", "seen_urls.json")),
+        run_report=str(output_raw.get("run_report", "run_report.json")),
     )
     scrape = ScrapeConfig(
         timeout_seconds=int(scrape_raw.get("timeout_seconds", 30)),
@@ -92,6 +120,8 @@ def load_config(path: str | Path) -> AppConfig:
         max_pages=int(scrape_raw.get("max_pages", 50)),
         workday_page_size=int(scrape_raw.get("workday_page_size", 50)),
         playwright_expand_rows=bool(scrape_raw.get("playwright_expand_rows", True)),
+        enrich_detail_titles=bool(scrape_raw.get("enrich_detail_titles", True)),
+        enrich_detail_max_requests=int(scrape_raw.get("enrich_detail_max_requests", 25)),
     )
     email = EmailConfig(include_all_results=bool(email_raw.get("include_all_results", False)))
 

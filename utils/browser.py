@@ -64,6 +64,15 @@ def _try_expand_rows(page) -> None:  # pragma: no cover
     except Exception:
         pass
 
+    # Some WebForms pages require clicking a Search button after changing row count.
+    try:
+        btn = page.query_selector('input[type="submit"][id$="btnSearch"]')
+        if btn:
+            btn.click(timeout=1000)
+            page.wait_for_load_state("networkidle", timeout=10_000)
+    except Exception:
+        pass
+
     # 2) Click “more” buttons/links repeatedly (bounded).
     for _ in range(20):
         clicked = False

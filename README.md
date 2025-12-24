@@ -38,6 +38,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Optional (recommended for full coverage):
+
+```bash
+pip install -r requirements-browser.txt
+python3 -m playwright install chromium
+```
+
 2) Create `.env` from `.env.example` and edit values:
 
 ```bash
@@ -69,7 +76,16 @@ Outputs:
 - `output/jobs.csv`
 - `output/email_preview.html`
 - `output/seen_urls.json` (used to detect “new” postings; only updated after a successful `--send-email`, or with `--update-last-state`)
+- `output/run_report.json` (per-hospital status, counts, and errors for the run)
 - logs under `logs/`
+
+Debugging tip: if `output/jobs.json` is empty, it may be because filtering excluded everything. To inspect what was scraped before filtering:
+
+```bash
+python3 controller.py --config config.yaml --dump-raw --email-preview-path output/email_preview.html
+```
+
+This writes `output/raw_scraped.json`.
 
 If you want to test new-postings tracking without emailing:
 
@@ -103,23 +119,35 @@ python3 scheduler.py --config config.yaml --interval-seconds 86400 --send-email
 
 ## Playwright (optional)
 
-Some job boards may require a headless browser. This project supports Playwright as an optional dependency:
+Some job boards are JS-rendered (notably Workday, and Lakeridge eRecruit’s “view more rows”). This project supports Playwright as an optional dependency:
 
 ```bash
 pip install playwright
-python3 -m playwright install --with-deps chromium
+python3 -m playwright install chromium
 ```
 
 Enable browser fallback (for JS-rendered boards) by setting `USE_PLAYWRIGHT=true` in `.env`.
+
+When `USE_PLAYWRIGHT=true`:
+- Lakeridge eRecruit uses Playwright to click “view more rows”/expand the listing.
+- Workday uses the JSON endpoint first, and falls back to Playwright if the API returns a 4xx/blocks the request.
+
+On Linux CI (GitHub Actions), Playwright system dependencies are installed via:
+
+```bash
+python3 -m playwright install --with-deps chromium
+```
 
 ## Configuration
 
 ### `config.yaml`
 
-- `role.title_all_of`: required keywords that must be present in the job title
-- `role.title_any_of`: at least one of these must be present in the job title
-- `role.employment_all_of`: required keywords that must be present in `job_type` (agent-provided label)
+- `role.title_groups_all`: list of keyword groups; each group requires at least one match in the job title
+- `role.employment_any_of`: optional/OR employment terms (matches `job_type`); leave empty to disable employment filtering
+- `role.employment_exclude_any_of`: optional exclude list for `job_type` (e.g., filter out part-time/casual)
 - `hospitals`: list of hospital boards (`type` is one of `workday`, `njoyn`, `erecruit`)
+- `scrape.enrich_detail_titles`: when a listing title is generic (e.g. “View Job Details”), fetch the detail page to extract a real title
+- `scrape.enrich_detail_max_requests`: safety cap for how many detail pages can be fetched per run
 
 ### `.env` (SMTP and runtime flags)
 
@@ -152,6 +180,9 @@ Optional:
   - Set `USE_PLAYWRIGHT=true` and install Playwright + Chromium (some boards are JS-rendered).
 - Workday requests fail (403/429) or return empty results
   - Reduce frequency (daily is fine), and consider enabling Playwright for that board if needed.
+- Workday requests fail with `400 Bad Request`
+  - Workday tenants sometimes require specific headers/payloads; check `output/run_report.json` for the response body snippet.
+  - If it persists, we can add a Playwright-based fallback that scrapes the rendered Workday listings instead of using the JSON endpoint.
 - Email fails to send (auth / TLS / blocked login)
   - Verify SMTP settings, ports, and whether your provider requires an “app password” (common with Gmail).
 
@@ -163,3 +194,8 @@ Notes:
 - GitHub cron is UTC; adjust the workflow cron to match your local timezone.
 - The runner is ephemeral; `output/seen_urls.json` is cached in the workflow to preserve “seen” state between runs (best-effort cache; if it’s evicted, you may resend older postings once).
 - Store SMTP values as GitHub Secrets (never commit `.env`).
+- If you want Workday + Lakeridge coverage, set repo variable `USE_PLAYWRIGHT=true` so the workflow installs Playwright/Chromium and enables browser fallback.
+
+Recommended repo setup:
+- **Variables**: `USE_PLAYWRIGHT=true`
+- **Secrets**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `EMAIL_TO` (optional: `EMAIL_CC`, `EMAIL_SUBJECT_PREFIX`, `EMAIL_INCLUDE_ALL_RESULTS`)

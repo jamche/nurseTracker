@@ -13,6 +13,7 @@ def main() -> int:
     parser.add_argument("--send-email", action="store_true")
     parser.add_argument("--email-preview-path", default="output/email_preview.html")
     parser.add_argument("--update-last-state", action="store_true")
+    parser.add_argument("--dump-raw", action="store_true")
     args = parser.parse_args()
 
     while True:
@@ -20,6 +21,7 @@ def main() -> int:
             args.config,
             send_email=bool(args.send_email),
             email_preview_path=str(args.email_preview_path) if args.email_preview_path else None,
+            dump_raw=bool(args.dump_raw),
             update_last_state=bool(args.update_last_state),
         )
         if rc != 0:

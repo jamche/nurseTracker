@@ -32,16 +32,24 @@ class TestFiltering(unittest.TestCase):
                 date_posted=None,
                 job_type="Part-Time Permanent",
             ),
+            JobPosting(
+                hospital="X",
+                job_title="Perioperative RN",
+                location="Oshawa, ON",
+                url="https://example.com/4",
+                date_posted=None,
+                job_type="Full-time",
+            ),
         ]
 
         matched = filter_postings(
             postings,
-            title_all_of=["Registered Nurse"],
-            title_any_of=["Operating Room", "Surgical"],
-            employment_all_of=["Full-Time", "Permanent"],
+            title_groups_all=[["Registered Nurse", "RN"], ["Operating Room", "Surgical", "Perioperative"]],
+            employment_any_of=["Full-Time", "Permanent"],
+            employment_exclude_any_of=["Part-Time"],
         )
 
-        self.assertEqual([p.url for p in matched], ["https://example.com/1"])
+        self.assertEqual({p.url for p in matched}, {"https://example.com/1", "https://example.com/4"})
 
     def test_filter_postings_empty_filters_returns_all(self) -> None:
         postings = [
@@ -54,5 +62,5 @@ class TestFiltering(unittest.TestCase):
                 job_type="Any",
             )
         ]
-        matched = filter_postings(postings, title_all_of=[], title_any_of=[], employment_all_of=[])
+        matched = filter_postings(postings, title_groups_all=[], employment_any_of=[], employment_exclude_any_of=[])
         self.assertEqual(matched, postings)

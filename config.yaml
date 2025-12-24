@@ -1,12 +1,14 @@
 role:
-  title_all_of:
-    - Registered Nurse
-  title_any_of:
-    - Operating Room
-    - Surgical
-  employment_all_of:
-    - Full-Time
-    - Permanent
+  # Each group requires at least one keyword match (improves recall vs strict matching).
+  # Example: ["Registered Nurse", "RN"] AND ["Operating Room", "Perioperative", ...]
+  title_groups_all:
+    - ["Registered Nurse", "RN"]
+    - ["Operating Room", "Surgical Suite", "Perioperative", "Surgical Services", "OR"]
+
+  # Optional/OR condition. Leave empty to not filter by employment terms.
+  employment_any_of: ["Full-Time", "Permanent"]
+  # Noise reduction: exclude these terms if present in job type.
+  employment_exclude_any_of: ["Part-Time", "Casual", "Temporary", "Contract"]
 
 output:
   dir: output
@@ -14,6 +16,7 @@ output:
   csv: jobs.csv
   last_json: last_jobs.json
   seen_urls: seen_urls.json
+  run_report: run_report.json
 
 scrape:
   timeout_seconds: 30
@@ -22,6 +25,8 @@ scrape:
   max_pages: 50
   workday_page_size: 50
   playwright_expand_rows: true
+  enrich_detail_titles: true
+  enrich_detail_max_requests: 25
 
 email:
   include_all_results: false
