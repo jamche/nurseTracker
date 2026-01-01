@@ -143,9 +143,12 @@ python3 -m playwright install --with-deps chromium
 ### `config.yaml`
 
 - `role.title_groups_all`: list of keyword groups; each group requires at least one match in the job title
+- `role.title_groups_mode`: `all` requires all groups; `any` matches if any group hits (useful to capture all RN postings)
+- `role.title_exclude_any_of`: optional title exclude list to drop obvious non-target roles
 - `role.employment_any_of`: optional/OR employment terms (matches `job_type`); leave empty to disable employment filtering
 - `role.employment_exclude_any_of`: optional exclude list for `job_type` (e.g., filter out part-time/casual)
 - `hospitals`: list of hospital boards (`type` is one of `workday`, `njoyn`, `erecruit`)
+- `hospitals[*].location_include_any_of`: optional per-hospital location filter (e.g., keep only Ajax for Lakeridge)
 - `scrape.enrich_detail_titles`: when a listing title is generic (e.g. “View Job Details”), fetch the detail page to extract a real title
 - `scrape.enrich_detail_max_requests`: safety cap for how many detail pages can be fetched per run
 

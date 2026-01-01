@@ -17,9 +17,11 @@ class TestConfig(unittest.TestCase):
             cfg.write_text(
                 """
 role:
+  title_groups_mode: any
   title_groups_all:
     - ["Registered Nurse", "RN"]
     - ["Operating Room", "Perioperative"]
+  title_exclude_any_of: ["Anesthesia Assistant"]
   employment_any_of: ["Full-Time", "Permanent"]
   employment_exclude_any_of: ["Part-Time", "Casual"]
 output:
@@ -44,19 +46,23 @@ hospitals:
   - hospital: Test Hospital
     type: workday
     url: https://example.wd10.myworkdayjobs.com/en-US/Site
+    location_include_any_of: ["Ajax"]
 """.strip(),
                 encoding="utf-8",
             )
 
             app = load_config(cfg)
+            self.assertEqual(app.role.title_groups_mode, "any")
             self.assertEqual(app.role.title_groups_all[0], ["Registered Nurse", "RN"])
             self.assertEqual(app.role.title_groups_all[1], ["Operating Room", "Perioperative"])
+            self.assertEqual(app.role.title_exclude_any_of, ["Anesthesia Assistant"])
             self.assertEqual(app.role.employment_any_of, ["Full-Time", "Permanent"])
             self.assertEqual(app.role.employment_exclude_any_of, ["Part-Time", "Casual"])
             self.assertEqual(app.output.seen_urls, "seen_urls.json")
             self.assertEqual(app.output.run_report, "run_report.json")
             self.assertEqual(len(app.hospitals), 1)
             self.assertEqual(app.hospitals[0].type, "workday")
+            self.assertEqual(app.hospitals[0].location_include_any_of, ["Ajax"])
             self.assertTrue(app.scrape.enrich_detail_titles)
             self.assertEqual(app.scrape.enrich_detail_max_requests, 10)
 

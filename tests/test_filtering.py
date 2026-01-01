@@ -45,11 +45,14 @@ class TestFiltering(unittest.TestCase):
         matched = filter_postings(
             postings,
             title_groups_all=[["Registered Nurse", "RN"], ["Operating Room", "Surgical", "Perioperative"]],
+            title_groups_mode="any",
+            title_exclude_any_of=["Anesthesia Assistant"],
             employment_any_of=["Full-Time", "Permanent"],
             employment_exclude_any_of=["Part-Time"],
         )
 
-        self.assertEqual({p.url for p in matched}, {"https://example.com/1", "https://example.com/4"})
+        # "any" mode should include RN-only titles (url 2) and periop RN (url 4), but still exclude part-time (url 3).
+        self.assertEqual({p.url for p in matched}, {"https://example.com/1", "https://example.com/2", "https://example.com/4"})
 
     def test_filter_postings_empty_filters_returns_all(self) -> None:
         postings = [
@@ -62,5 +65,12 @@ class TestFiltering(unittest.TestCase):
                 job_type="Any",
             )
         ]
-        matched = filter_postings(postings, title_groups_all=[], employment_any_of=[], employment_exclude_any_of=[])
+        matched = filter_postings(
+            postings,
+            title_groups_all=[],
+            title_groups_mode="all",
+            title_exclude_any_of=[],
+            employment_any_of=[],
+            employment_exclude_any_of=[],
+        )
         self.assertEqual(matched, postings)

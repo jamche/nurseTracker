@@ -17,7 +17,7 @@ from agents.lakeridge import LakeridgeERecruitAgent
 from agents.njoyn import NjoynAgent
 from agents.workday import WorkdayAgent
 from config import AppConfig, HospitalConfig, load_config
-from filtering import filter_postings
+from filtering import filter_postings, keyword_match
 from models import JobPosting
 from notifiers.emailer import load_smtp_config_from_env, send_html_email
 from rendering.email_templates import render_jobs_email
@@ -143,9 +143,12 @@ def run(
     filtered = filter_postings(
         all_postings,
         title_groups_all=app_config.role.title_groups_all,
+        title_groups_mode=app_config.role.title_groups_mode,
+        title_exclude_any_of=app_config.role.title_exclude_any_of,
         employment_any_of=app_config.role.employment_any_of,
         employment_exclude_any_of=app_config.role.employment_exclude_any_of,
     )
+    filtered = _apply_hospital_location_filters(filtered, app_config)
     filtered = dedupe_by_url(filtered)
 
     filtered_sorted = sorted(filtered, key=lambda p: (p.hospital.lower(), p.job_title.lower(), p.url))
@@ -261,6 +264,20 @@ def _build_agent(hospital: HospitalConfig, *, http: HttpClient, logger):
     if hospital.type == "erecruit":
         return LakeridgeERecruitAgent(hospital, http=http, logger=logger)
     raise ValueError(f"Unknown hospital type: {hospital.type}")
+
+
+def _apply_hospital_location_filters(postings: list[JobPosting], app_config: AppConfig) -> list[JobPosting]:
+    by_name = {h.hospital: h for h in app_config.hospitals}
+    out: list[JobPosting] = []
+    for p in postings:
+        h = by_name.get(p.hospital)
+        if h and h.location_include_any_of:
+            if not p.location:
+                continue
+            if not keyword_match(p.location, h.location_include_any_of):
+                continue
+        out.append(p)
+    return out
 
 
 def _write_json(path: Path, postings: list[JobPosting]) -> None:

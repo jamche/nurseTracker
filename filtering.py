@@ -38,8 +38,16 @@ def keyword_in_text(text: str, *, normalized_text: str, keyword: str) -> bool:
     return _normalize(kw) in normalized_text
 
 
-def groups_all_match(text: str, groups: Sequence[Sequence[str]]) -> bool:
+def groups_match(text: str, groups: Sequence[Sequence[str]], *, mode: str) -> bool:
     normalized = _normalize(text)
+    if not groups:
+        return True
+    if mode == "any":
+        for group in groups:
+            if keyword_match_with_normalized(text, normalized, group):
+                return True
+        return False
+    # default: "all"
     for group in groups:
         if not keyword_match_with_normalized(text, normalized, group):
             return False
@@ -57,12 +65,16 @@ def filter_postings(
     postings: list[JobPosting],
     *,
     title_groups_all: list[list[str]],
+    title_groups_mode: str,
+    title_exclude_any_of: list[str],
     employment_any_of: list[str],
     employment_exclude_any_of: list[str],
 ) -> list[JobPosting]:
     out: list[JobPosting] = []
     for p in postings:
-        if title_groups_all and not groups_all_match(p.job_title, title_groups_all):
+        if title_exclude_any_of and keyword_match(p.job_title, title_exclude_any_of):
+            continue
+        if title_groups_all and not groups_match(p.job_title, title_groups_all, mode=title_groups_mode):
             continue
         if employment_exclude_any_of and keyword_match(p.job_type or "", employment_exclude_any_of):
             continue

@@ -14,11 +14,14 @@ class HospitalConfig:
     hospital: str
     type: HospitalType
     url: str
+    location_include_any_of: list[str]
 
 
 @dataclass(frozen=True)
 class RoleConfig:
+    title_groups_mode: TitleGroupsMode
     title_groups_all: list[list[str]]
+    title_exclude_any_of: list[str]
     employment_any_of: list[str]
     employment_exclude_any_of: list[str]
 
@@ -98,8 +101,14 @@ def load_config(path: str | Path) -> AppConfig:
             raise ValueError(f"Expected role.title_groups_all[{i}] to be a list")
         parsed_groups.append([str(x) for x in g if str(x).strip()])
 
+    title_groups_mode = str(role_raw.get("title_groups_mode", "all")).strip().lower()
+    if title_groups_mode not in {"all", "any"}:
+        raise ValueError("Expected role.title_groups_mode to be one of: all, any")
+
     role = RoleConfig(
+        title_groups_mode=title_groups_mode,  # type: ignore[arg-type]
         title_groups_all=parsed_groups,
+        title_exclude_any_of=[str(x) for x in (role_raw.get("title_exclude_any_of") or []) if str(x).strip()],
         employment_any_of=[str(x) for x in (role_raw.get("employment_any_of") or []) if str(x).strip()],
         employment_exclude_any_of=[
             str(x) for x in (role_raw.get("employment_exclude_any_of") or []) if str(x).strip()
@@ -140,7 +149,11 @@ def load_config(path: str | Path) -> AppConfig:
                 hospital=str(h_dict["hospital"]),
                 type=h_type,  # type: ignore[arg-type]
                 url=str(h_dict["url"]),
+                location_include_any_of=[
+                    str(x) for x in (h_dict.get("location_include_any_of") or []) if str(x).strip()
+                ],
             )
         )
 
     return AppConfig(role=role, output=output, scrape=scrape, email=email, hospitals=hospitals)
+TitleGroupsMode = Literal["all", "any"]
