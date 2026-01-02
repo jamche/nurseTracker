@@ -76,9 +76,11 @@ def filter_postings(
             continue
         if title_groups_all and not groups_match(p.job_title, title_groups_all, mode=title_groups_mode):
             continue
-        if employment_exclude_any_of and keyword_match(p.job_type or "", employment_exclude_any_of):
+        # Employment terms often appear in the title on some boards, and agents may not have a reliable job_type yet.
+        employment_text = f"{p.job_type or ''} {p.job_title or ''}".strip()
+        if employment_exclude_any_of and keyword_match(employment_text, employment_exclude_any_of):
             continue
-        if employment_any_of and not keyword_match(p.job_type or "", employment_any_of):
+        if employment_any_of and not keyword_match(employment_text, employment_any_of):
             continue
         out.append(p)
     return out

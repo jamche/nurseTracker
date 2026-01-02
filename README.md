@@ -152,6 +152,8 @@ python3 -m playwright install --with-deps chromium
 - `scrape.enrich_detail_titles`: when a listing title is generic (e.g. “View Job Details”), fetch the detail page to extract a real title
 - `scrape.enrich_detail_max_requests`: safety cap for how many detail pages can be fetched per run
 
+Note: employment include/exclude filtering is applied against `(job_type + job_title)` so that postings with “Part Time/Temporary/PTT” in the title are still filtered even if the scraper can’t reliably extract job type fields.
+
 ### `.env` (SMTP and runtime flags)
 
 Required for `--send-email`:

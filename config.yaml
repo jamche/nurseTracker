@@ -20,12 +20,28 @@ role:
       ]
 
   # Optional: exclude obvious non-target roles by title.
-  title_exclude_any_of: ["Anesthesia Assistant", "Anaesthesia Assistant"]
+  title_exclude_any_of:
+    - Anesthesia Assistant
+    - Anaesthesia Assistant
+    - Clinical Extern
+    - Extern
+    - Student
+    - Nursing Students
 
   # Optional/OR condition. Leave empty to not filter by employment terms.
   employment_any_of: ["Full-Time", "Permanent"]
   # Noise reduction: exclude these terms if present in job type.
-  employment_exclude_any_of: ["Part-Time", "Casual", "Temporary", "Contract"]
+  # Applied against (job_type + job_title) to catch boards that put these terms in the title.
+  employment_exclude_any_of:
+    - Part-Time
+    - Part Time
+    - PT
+    - PTT
+    - Temporary
+    - Temp
+    - Contract
+    - Casual
+    - FTT
 
 output:
   dir: output

@@ -26,11 +26,12 @@ class TestFiltering(unittest.TestCase):
             ),
             JobPosting(
                 hospital="X",
-                job_title="Registered Nurse – Operating Room",
+                job_title="Registered Nurse – Operating Room - Part Time",
                 location="Oshawa, ON",
                 url="https://example.com/3",
                 date_posted=None,
-                job_type="Part-Time Permanent",
+                # Simulate a scraper that hardcodes job_type but the title shows the truth.
+                job_type="Full-Time Permanent",
             ),
             JobPosting(
                 hospital="X",
@@ -48,7 +49,7 @@ class TestFiltering(unittest.TestCase):
             title_groups_mode="any",
             title_exclude_any_of=["Anesthesia Assistant"],
             employment_any_of=["Full-Time", "Permanent"],
-            employment_exclude_any_of=["Part-Time"],
+            employment_exclude_any_of=["Part-Time", "Part Time"],
         )
 
         # "any" mode should include RN-only titles (url 2) and periop RN (url 4), but still exclude part-time (url 3).
