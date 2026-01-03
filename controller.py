@@ -23,6 +23,7 @@ from notifiers.emailer import load_smtp_config_from_env, send_html_email
 from rendering.email_templates import render_jobs_email
 from utils.dedupe import dedupe_by_url
 from utils.http import HttpClient
+from utils.job_type import infer_job_type
 from utils.logging_setup import setup_logging
 from utils.state import read_seen_urls, write_seen_urls
 
@@ -139,6 +140,19 @@ def run(
         raw_path = output_dir / "raw_scraped.json"
         _write_json(raw_path, all_postings)
         logger.info("Wrote raw scraped postings to %s", str(raw_path))
+
+    # Normalize job_type based on title hints so downstream filtering and output are more accurate.
+    all_postings = [
+        JobPosting(
+            hospital=p.hospital,
+            job_title=p.job_title,
+            location=p.location,
+            url=p.url,
+            date_posted=p.date_posted,
+            job_type=infer_job_type(job_title=p.job_title, current_job_type=p.job_type),
+        )
+        for p in all_postings
+    ]
 
     filtered = filter_postings(
         all_postings,

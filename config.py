@@ -43,6 +43,7 @@ class ScrapeConfig:
     user_agent: str
     max_pages: int
     workday_page_size: int
+    workday_search_text: str
     playwright_expand_rows: bool
     enrich_detail_titles: bool
     enrich_detail_max_requests: int
@@ -128,6 +129,7 @@ def load_config(path: str | Path) -> AppConfig:
         user_agent=str(scrape_raw.get("user_agent", "nurseTracker/1.0")),
         max_pages=int(scrape_raw.get("max_pages", 50)),
         workday_page_size=int(scrape_raw.get("workday_page_size", 50)),
+        workday_search_text=str(scrape_raw.get("workday_search_text", "") or ""),
         playwright_expand_rows=bool(scrape_raw.get("playwright_expand_rows", True)),
         enrich_detail_titles=bool(scrape_raw.get("enrich_detail_titles", True)),
         enrich_detail_max_requests=int(scrape_raw.get("enrich_detail_max_requests", 25)),

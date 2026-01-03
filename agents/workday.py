@@ -47,7 +47,33 @@ class WorkdayAgent(BaseAgent):
         return f"{self.host}/wday/cxs/{self.tenant}/{self.site}/jobs"
 
     def _details_url(self, external_path: str) -> str:
-        return urljoin(self.host, external_path)
+        """
+        Workday's cxs API commonly returns externalPath values like:
+          /job/<location>/<slug>
+        but the user-facing URL that works reliably is typically:
+          /en-US/<site>/details/<slug>
+        """
+        path = (external_path or "").strip()
+        if not path:
+            return self.hospital.url
+
+        # If the link already points to the external site, keep it.
+        if "/details/" in path or f"/{self.site}/" in path:
+            return urljoin(self.host, path)
+
+        slug = path.rstrip("/").split("/")[-1]
+        return f"{self.host}/en-US/{self.site}/details/{slug}"
+
+    def _normalize_href_to_details(self, href: str) -> str:
+        h = (href or "").strip()
+        if not h:
+            return self.hospital.url
+        if "/details/" in h:
+            return urljoin(self.host, h)
+        if "/job/" in h:
+            slug = h.rstrip("/").split("/")[-1]
+            return f"{self.host}/en-US/{self.site}/details/{slug}"
+        return urljoin(self.host, h)
 
     def scrape(self, app_config: "AppConfig") -> list[JobPosting]:
         endpoint = self._endpoint()
@@ -72,9 +98,8 @@ class WorkdayAgent(BaseAgent):
         results: list[JobPosting] = []
         offset = 0
         limit = app_config.scrape.workday_page_size
-        # Keep Workday search broad; exact filtering happens post-scrape.
-        # Use a small hint to reduce irrelevant results without being overly strict.
-        search_text = "RN"
+        # Empty search_text fetches all postings; filtering happens post-scrape.
+        search_text = app_config.scrape.workday_search_text
         max_pages = app_config.scrape.max_pages
         pages = 0
         headers = {
@@ -83,19 +108,23 @@ class WorkdayAgent(BaseAgent):
             "Origin": self.host,
             "Referer": self.hospital.url,
         }
+        effective_total: int | None = None
 
         while True:
             pages += 1
             if pages > max_pages:
                 self.logger.warning("Workday pagination stop after %s pages for %s", max_pages, self.hospital.hospital)
                 break
-            payload = {
+            payload: dict[str, Any] = {
                 "appliedFacets": {},
                 "limit": limit,
                 "offset": offset,
-                "searchText": search_text,
                 "sortBy": "Most recent",
             }
+            # Some tenants behave differently when searchText is explicitly empty;
+            # omit the field entirely to request the unfiltered listing.
+            if search_text:
+                payload["searchText"] = search_text
             data = self.http.post_json(endpoint, payload=payload, headers=headers)
 
             postings = data.get("jobPostings") or []
@@ -128,47 +157,44 @@ class WorkdayAgent(BaseAgent):
                 )
 
             total = data.get("total")
-            if isinstance(total, int):
+            # Some tenants return total=0 on subsequent pages even though results exist.
+            # Treat total=0 as "unknown" unless it's the first page and postings are empty.
+            received_total = total if isinstance(total, int) else None
+            if isinstance(received_total, int) and received_total > 0:
+                effective_total = received_total
+
+            if effective_total is not None:
+                self.logger.info(
+                    "%s: Workday page %s offset=%s limit=%s total=%s",
+                    self.hospital.hospital,
+                    pages,
+                    offset,
+                    limit,
+                    effective_total,
+                )
                 offset += limit
-                if offset >= total:
+                if offset >= effective_total:
                     break
             else:
+                # No reliable total; continue until a short/empty page.
+                offset += limit
                 if len(postings) < limit:
                     break
-                offset += limit
 
         return results
 
     def _scrape_via_browser(self, app_config: "AppConfig") -> list[JobPosting]:
-        # Workday external sites are typically JS-rendered. We load the listing page and pull job title anchors.
         browser = BrowserClient(timeout_ms=app_config.scrape.timeout_seconds * 1000)
-        html = browser.get_html(self.hospital.url)
+        pairs = browser.get_workday_job_links(self.hospital.url, max_iterations=app_config.scrape.max_pages)
 
-        try:
-            from bs4 import BeautifulSoup  # type: ignore
-        except Exception as e:
-            raise RuntimeError("BeautifulSoup is required for browser fallback parsing") from e
-
-        soup = BeautifulSoup(html, "html.parser")
         results: list[JobPosting] = []
-
-        # Prefer the canonical job title links.
-        anchors = soup.select('a[data-automation-id="jobTitle"][href]')
-        if not anchors:
-            anchors = soup.select('a[href*="/job/"]')
-
         seen: set[str] = set()
-        for a in anchors:
-            href = a.get("href")
-            if not href:
-                continue
-            title = (a.get_text(" ", strip=True) or "").strip()
-            if not title or title.lower() in _GENERIC_WORKDAY_TEXT:
-                # Try to extract a better title from surrounding card/row context.
-                title = _extract_title_from_context(a) or title
+        for title, href in pairs:
+            title = (title or "").strip()
+            href = (href or "").strip()
             if not title or title.lower() in _GENERIC_WORKDAY_TEXT:
                 continue
-            url = urljoin(self.host, href)
+            url = self._normalize_href_to_details(href)
             if url in seen:
                 continue
             seen.add(url)
@@ -217,23 +243,3 @@ _GENERIC_WORKDAY_TEXT = {
     "apply",
     "apply now",
 }
-
-
-def _extract_title_from_context(a) -> str | None:
-    # Walk up a bit and find the longest non-generic text in the card/row.
-    parent = a
-    for _ in range(4):
-        parent = getattr(parent, "parent", None)
-        if parent is None:
-            break
-        try:
-            txt = parent.get_text(" ", strip=True)
-        except Exception:
-            continue
-        if not txt:
-            continue
-        # Keep it conservative: return if it looks like a real title.
-        if len(txt) >= 8 and txt.lower() not in _GENERIC_WORKDAY_TEXT:
-            # Sometimes this includes multiple fields; take first line-ish chunk.
-            return txt.split("  ")[0].strip()
-    return None

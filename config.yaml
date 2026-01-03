@@ -56,7 +56,9 @@ scrape:
   retry_attempts: 2
   user_agent: "Mozilla/5.0 (compatible; nurseTracker/1.0)"
   max_pages: 50
-  workday_page_size: 50
+  workday_page_size: 20
+  # Leave blank to fetch all postings, then filter locally.
+  workday_search_text: ""
   playwright_expand_rows: true
   enrich_detail_titles: true
   enrich_detail_max_requests: 100
@@ -65,16 +67,7 @@ email:
   include_all_results: false
 
 hospitals:
-  - hospital: Lakeridge Health
-    type: erecruit
-    url: https://careers.lakeridgehealth.on.ca/eRecruit/
-    location_include_any_of: ["Ajax"]
-  - hospital: Markham Stouffville (Oak Valley Health)
-    type: workday
-    url: https://oakvalleyhealth.wd10.myworkdayjobs.com/en-US/OakValleyHealth
   - hospital: Scarborough General (SHN)
     type: workday
     url: https://shn.wd10.myworkdayjobs.com/SHN_External_Career_Site
-  - hospital: North York General Hospital
-    type: njoyn
-    url: https://clients.njoyn.com/cl4/xweb/xweb.asp?CLID=77108&page=joblisting&lang=1
+  

@@ -37,6 +37,7 @@ scrape:
   user_agent: "test-agent"
   max_pages: 50
   workday_page_size: 50
+  workday_search_text: ""
   playwright_expand_rows: true
   enrich_detail_titles: true
   enrich_detail_max_requests: 10
@@ -65,6 +66,7 @@ hospitals:
             self.assertEqual(app.hospitals[0].location_include_any_of, ["Ajax"])
             self.assertTrue(app.scrape.enrich_detail_titles)
             self.assertEqual(app.scrape.enrich_detail_max_requests, 10)
+            self.assertEqual(app.scrape.workday_search_text, "")
 
     def test_load_config_rejects_unknown_hospital_type(self) -> None:
         try:

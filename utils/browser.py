@@ -28,6 +28,55 @@ class BrowserClient:
             finally:
                 browser.close()
 
+    def get_workday_job_links(self, url: str, *, max_iterations: int = 50) -> list[tuple[str, str]]:
+        """
+        Workday listing pages often show a subset of jobs and require scrolling / clicking 'Load more'.
+        This returns (title, href) pairs as seen on the listing page.
+        """
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(
+                "Playwright is not installed. Install with `pip install playwright` and "
+                "`python -m playwright install chromium`."
+            ) from e
+
+        with sync_playwright() as p:  # pragma: no cover
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(url, wait_until="networkidle", timeout=self.timeout_ms)
+
+                seen: dict[str, str] = {}
+                for _ in range(max_iterations):
+                    for a in page.query_selector_all('a[data-automation-id="jobTitle"][href]'):
+                        href = a.get_attribute("href") or ""
+                        title = (a.inner_text() or "").strip()
+                        if href and title:
+                            seen[href] = title
+
+                    # Try a "Load more" button first, otherwise scroll.
+                    clicked = False
+                    try:
+                        btn = page.get_by_role("button", name=re.compile(r"load more", re.I))
+                        if btn.count() > 0:
+                            btn.first.click(timeout=1000)
+                            page.wait_for_timeout(800)
+                            clicked = True
+                    except Exception:
+                        pass
+
+                    if not clicked:
+                        try:
+                            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            page.wait_for_timeout(800)
+                        except Exception:
+                            break
+
+                return [(t, h) for h, t in seen.items()]
+            finally:
+                browser.close()
+
 
 def _try_expand_rows(page) -> None:  # pragma: no cover
     # Heuristics for “view more rows / show more / load more” style tables.
