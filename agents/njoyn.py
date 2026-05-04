@@ -20,6 +20,8 @@ class NjoynAgent(BaseAgent):
         super().__init__(hospital, http=http, logger=logger)
 
     def scrape(self, app_config: "AppConfig") -> list[JobPosting]:
+        if self.hospital.entry_url:
+            return self._scrape_via_entry_page(app_config)
         self.logger.info("Njoyn scrape start %s (%s)", self.hospital.hospital, self.hospital.url)
         visited: set[str] = set()
         next_url: str | None = self.hospital.url
@@ -78,6 +80,179 @@ class NjoynAgent(BaseAgent):
             next_url = find_next_page_url(current_url=next_url, soup=soup, visited=visited)
 
         return postings
+
+    def _scrape_via_entry_page(self, app_config: "AppConfig") -> list[JobPosting]:  # pragma: no cover
+        """
+        Some njoyn deployments (e.g., NYGH) sit behind Radware bot protection and require a
+        click-through from a referrer page that mints a tokenized listing URL on the fly.
+
+        Approach: open `entry_url` in a real browser, click the configured listing link
+        (matched against `url`), and scrape the resulting jobs table directly from the DOM.
+        """
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "Playwright is required when entry_url is set. Install with "
+                "`pip install playwright` and `python -m playwright install chromium`."
+            ) from e
+
+        entry_url = self.hospital.entry_url or ""
+        listing_host = urlparse(self.hospital.url).netloc
+        timeout_ms = app_config.scrape.timeout_seconds * 1000
+        max_pages = max(1, app_config.scrape.max_pages)
+        self.logger.info(
+            "Njoyn scrape start %s via entry page %s",
+            self.hospital.hospital,
+            entry_url,
+        )
+
+        # njoyn is fronted by Radware bot detection. Default Playwright Chromium gets flagged
+        # because of `navigator.webdriver`, headless UA fingerprints, and missing JS shims.
+        # The combination below (real Chrome UA + AutomationControlled disabled + a small
+        # init script that masks the obvious tells) is enough to pass the validate.perfdrive
+        # challenge.
+        browser_ua = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+        stealth_init = """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            window.chrome = window.chrome || { runtime: {} };
+        """
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            try:
+                context = browser.new_context(
+                    user_agent=browser_ua,
+                    viewport={"width": 1280, "height": 800},
+                    locale="en-US",
+                )
+                context.add_init_script(stealth_init)
+                page = context.new_page()
+                page.goto(entry_url, wait_until="domcontentloaded", timeout=timeout_ms)
+
+                link = page.locator(
+                    f'a[href*="{listing_host}"][href*="tbtoken"]'
+                ).first
+                link.wait_for(timeout=timeout_ms)
+                with page.expect_navigation(wait_until="domcontentloaded", timeout=timeout_ms):
+                    link.click()
+
+                seen_urls: set[str] = set()
+                postings: list[JobPosting] = []
+                for page_index in range(max_pages):
+                    page.wait_for_selector(
+                        'a[href*="Page=JobDetails"], a[href*="page=JobDetails"], a[href*="page=jobdetails"]',
+                        timeout=timeout_ms,
+                    )
+                    html = page.content()
+                    base_url = page.url
+                    page_postings = _parse_njoyn_listing_table(
+                        html, base_url=base_url, hospital=self.hospital.hospital
+                    )
+                    fresh = [p for p in page_postings if p.url not in seen_urls]
+                    for fp in fresh:
+                        seen_urls.add(fp.url)
+                    postings.extend(fresh)
+                    self.logger.info(
+                        "%s: njoyn entry-page %s scraped %s rows (%s new); total %s",
+                        self.hospital.hospital,
+                        page_index + 1,
+                        len(page_postings),
+                        len(fresh),
+                        len(postings),
+                    )
+
+                    next_link = page.get_by_role("link", name="NEXT", exact=True).first
+                    try:
+                        if next_link.count() == 0:
+                            break
+                    except Exception:
+                        break
+                    previous_first = ""
+                    try:
+                        previous_first = page.locator(
+                            'a[href*="Page=JobDetails"], a[href*="page=JobDetails"], a[href*="page=jobdetails"]'
+                        ).first.get_attribute("href") or ""
+                    except Exception:
+                        pass
+                    try:
+                        next_link.click(timeout=timeout_ms)
+                    except Exception:
+                        break
+                    try:
+                        page.wait_for_function(
+                            "(prev) => { const a = document.querySelector('a[href*=\"Page=JobDetails\"], a[href*=\"page=JobDetails\"], a[href*=\"page=jobdetails\"]'); return a && a.getAttribute('href') !== prev; }",
+                            arg=previous_first,
+                            timeout=timeout_ms,
+                        )
+                    except Exception:
+                        break
+
+                return postings
+            finally:
+                browser.close()
+
+
+def _parse_njoyn_listing_table(html: str, *, base_url: str, hospital: str) -> list[JobPosting]:
+    """
+    NYGH-style njoyn listing: a single table with header columns
+    [Job Number, Program/Area, Job Title, Category, Job Type, Closing Date].
+    The Job Number cell holds a JobDetails link; row metadata lives in the other cells.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    out: list[JobPosting] = []
+
+    target_table = None
+    for table in soup.find_all("table"):
+        headers = [
+            (th.get_text(" ", strip=True) or "").lower()
+            for th in table.find_all(["th"])
+        ]
+        if not headers:
+            headers = [
+                (a.get_text(" ", strip=True) or "").lower()
+                for a in table.select("tr:first-child a")
+            ]
+        if any("job number" in h for h in headers) and any("job title" in h for h in headers):
+            target_table = table
+            break
+
+    if target_table is None:
+        return out
+
+    for tr in target_table.find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) < 5:
+            continue
+        link = cells[0].find("a", href=True)
+        if not link:
+            continue
+        href = (link.get("href") or "").strip()
+        if not href or "jobdetails" not in href.lower():
+            continue
+        title = cells[2].get_text(" ", strip=True)
+        if not title:
+            continue
+        job_type = cells[4].get_text(" ", strip=True) if len(cells) > 4 else ""
+        out.append(
+            JobPosting(
+                hospital=hospital,
+                job_title=title,
+                location=None,
+                url=urljoin(base_url, href),
+                date_posted=None,
+                job_type=job_type or "Full-Time Permanent",
+            )
+        )
+    return out
 
 
 def find_next_page_url(*, current_url: str, soup: BeautifulSoup, visited: set[str]) -> str | None:

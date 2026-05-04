@@ -8,7 +8,9 @@ It aggregates results, filters to the target role, writes JSON/CSV outputs, and 
 ## Project overview
 
 Currently configured hospitals:
-- Scarborough Health Network (SHN) — Workday external site
+- Sunnybrook Health Sciences Centre — Talcura (`sunnybrook.talcura.com`, embedded in the careers page). Driven by Playwright; the agent applies the page's category and employment-status dropdowns before scraping.
+- Markham Stouffville Hospital (Oak Valley Health) — Workday external site
+- North York General Hospital — njoyn, fronted by Radware bot detection. Driven by Playwright via the NYGH careers landing page so the request goes through the same click-flow a human would take.
 
 Key entry points:
 - `controller.py`: run once (cron / GitHub Actions)
@@ -22,7 +24,7 @@ Key entry points:
 - OS: macOS/Linux recommended for cron; GitHub Actions workflow assumes Ubuntu
 - Network access to the job boards and your SMTP server
 
-Optional (only if the Workday API is blocked and browser fallback is needed):
+Required for the Sunnybrook and NYGH agents (and used as a Workday fallback):
 - Playwright + Chromium
 
 ## Installation
@@ -35,7 +37,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Optional (recommended for full coverage):
+Install browser dependencies (required — Sunnybrook and NYGH cannot be scraped without them):
 
 ```bash
 pip install -r requirements-browser.txt
@@ -82,7 +84,20 @@ Debugging tip: if `output/jobs.json` is empty, it may be because filtering exclu
 python3 controller.py --config config.yaml --dump-raw --email-preview-path output/email_preview.html
 ```
 
-This writes `output/raw_scraped.json`.
+This writes `output/raw_scraped.json` (every posting from every hospital, before role/employment filters are applied).
+
+Inspect a run quickly:
+
+```bash
+# Per-hospital scraped vs matched counts and any errors
+jq '.results[] | {hospital, scraped_count, matched_count, status, error}' output/run_report.json
+
+# The filtered set that would land in the email
+jq '.[] | {hospital, job_title, job_type}' output/jobs.json
+
+# Open the rendered email in your browser (macOS)
+open output/email_preview.html
+```
 
 If you want to test new-postings tracking without emailing:
 
@@ -114,21 +129,23 @@ If you prefer a long-running process over cron:
 python3 scheduler.py --config config.yaml --interval-seconds 86400 --send-email
 ```
 
-## Playwright (optional)
+## Playwright
 
-This project supports Playwright as an optional dependency if the Workday JSON API is blocked and you need browser fallback:
+Playwright is **required** for two of the three configured hospitals:
+
+- **Sunnybrook (Talcura)** — the listings live in a JS-driven iframe with Telerik dropdowns; the agent has to interact with them to apply category/employment-status filters.
+- **NYGH (njoyn)** — `clients.njoyn.com` is fronted by Radware bot detection. The agent loads `https://www.nygh.on.ca/careers-and-volunteers/career-opportunities/` first, then clicks "View all Current Job Positions" to follow the same tokenized URL a real user would. A real Chrome desktop UA + a small init script masking `navigator.webdriver`/`languages`/`plugins`/`window.chrome` is enough to pass the validate.perfdrive challenge.
+
+Install:
 
 ```bash
 pip install playwright
 python3 -m playwright install chromium
 ```
 
-Enable browser fallback (for JS-rendered boards) by setting `USE_PLAYWRIGHT=true` in `.env`.
+Workday is still HTTP-first. Set `USE_PLAYWRIGHT=true` in `.env` to enable a Playwright fallback if the Workday JSON API gets blocked.
 
-When `USE_PLAYWRIGHT=true`:
-- Workday uses the JSON endpoint first, and falls back to Playwright if the API returns a 4xx/blocks the request.
-
-On Linux CI (GitHub Actions), Playwright system dependencies are installed via:
+On Linux CI (GitHub Actions), install with system deps:
 
 ```bash
 python3 -m playwright install --with-deps chromium
@@ -143,8 +160,10 @@ python3 -m playwright install --with-deps chromium
 - `role.title_exclude_any_of`: optional title exclude list to drop obvious non-target roles
 - `role.employment_any_of`: optional/OR employment terms (matches `job_type`); leave empty to disable employment filtering
 - `role.employment_exclude_any_of`: optional exclude list for `job_type` (e.g., filter out part-time/casual)
-- `hospitals`: list of hospital boards (`type` is one of `workday`, `njoyn`, `erecruit`)
+- `hospitals`: list of hospital boards (`type` is one of `workday`, `njoyn`, `erecruit`, `talcura`)
 - `hospitals[*].location_include_any_of`: optional per-hospital location filter (applied to the `location` field when present)
+- `hospitals[*].talcura_category` / `hospitals[*].talcura_employment_status` (talcura only): values to pick from the page's "Filter by category" / "Filter by employment status" dropdowns before scraping. For Sunnybrook these are typically `Nursing` and `Regular full-time`.
+- `hospitals[*].entry_url` (njoyn only): a public referrer page that mints a tokenized listing URL on click. When set, the njoyn agent navigates here in Playwright and clicks the link to `url`'s host instead of fetching `url` directly. Used for NYGH because the njoyn host is bot-protected.
 - `scrape.enrich_detail_titles`: when a listing title is generic (e.g. “View Job Details”), fetch the detail page to extract a real title
 - `scrape.enrich_detail_max_requests`: safety cap for how many detail pages can be fetched per run
 
@@ -167,18 +186,23 @@ Optional:
 ### Pagination / coverage
 
 - Workday uses an API endpoint and is paginated automatically (configurable via `scrape.workday_page_size` and `scrape.max_pages`).
+- Talcura paginates by clicking "Next Page" until the WebForms postback no longer changes the listing fingerprint (Talcura signals end-of-pager via `onclick="return false;..."`).
+- njoyn entry-page mode paginates via the table's "NEXT" link until it disappears or the listing stops changing.
 
 Workday note: set `scrape.workday_search_text` to `""` to fetch all postings and rely on local filtering.
 
 ## Common errors & troubleshooting
 
-- `ModuleNotFoundError: No module named ...`
-  - Activate your venv and run `pip install -r requirements.txt`.
+- `ModuleNotFoundError: No module named ...` (e.g., `yaml`, `playwright`)
+  - You're likely running with system Python. Either activate the venv (`source .venv/bin/activate`) or call the venv interpreter directly (`.venv/bin/python3 controller.py ...`). If the venv is fresh, run `pip install -r requirements.txt -r requirements-browser.txt && python3 -m playwright install chromium`.
 - `NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+ (LibreSSL...)`
   - Reinstall deps after updating requirements: `pip install -r requirements.txt` (this repo pins `urllib3<2` for macOS LibreSSL compatibility), or use a Python build linked against OpenSSL (Homebrew/pyenv).
 - No results but you expect matches
-  - Check `config.yaml` keywords first.
-  - Set `USE_PLAYWRIGHT=true` and install Playwright + Chromium (some boards are JS-rendered).
+  - Check `config.yaml` keywords first; with `title_groups_mode: all` every group must hit, so RN postings without an OR/Day-Surgery/Endoscopy/Cath-Lab keyword are intentionally filtered out.
+  - Re-run with `--dump-raw` and inspect `output/raw_scraped.json` to see what each hospital actually returned.
+  - For Workday boards: set `USE_PLAYWRIGHT=true` and install Playwright + Chromium (some boards are JS-rendered).
+- NYGH lands on a Radware "Captcha Page" / `validate.perfdrive.com`
+  - The bot bypass is intentionally minimal; Radware periodically tightens its checks. If this happens, install `playwright-stealth` or switch the launch to the real Chrome channel (`p.chromium.launch(channel="chrome", headless=False)`).
 - Workday requests fail (403/429) or return empty results
   - Reduce frequency (daily is fine), and consider enabling Playwright for that board if needed.
 - Workday requests fail with `400 Bad Request`

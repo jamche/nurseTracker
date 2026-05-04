@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 
-HospitalType = Literal["workday", "njoyn", "erecruit"]
-_HOSPITAL_TYPES: set[str] = {"workday", "njoyn", "erecruit"}
+HospitalType = Literal["workday", "njoyn", "erecruit", "talcura"]
+_HOSPITAL_TYPES: set[str] = {"workday", "njoyn", "erecruit", "talcura"}
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,13 @@ class HospitalConfig:
     type: HospitalType
     url: str
     location_include_any_of: list[str]
+    # Talcura-specific dropdown filters (applied via Playwright before scraping).
+    talcura_category: Optional[str] = None
+    talcura_employment_status: Optional[str] = None
+    # Optional referrer page that originates a tokenized link to `url`. When set, the agent
+    # navigates here in a real browser and clicks through, so the listings host (which is
+    # bot-protected) treats the request as a normal user click.
+    entry_url: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +153,9 @@ def load_config(path: str | Path) -> AppConfig:
         h_type = str(h_dict["type"])
         if h_type not in _HOSPITAL_TYPES:
             raise ValueError(f"Unsupported hospital type at hospitals[{i}].type: {h_type}")
+        talcura_category = h_dict.get("talcura_category")
+        talcura_employment_status = h_dict.get("talcura_employment_status")
+        entry_url = h_dict.get("entry_url")
         hospitals.append(
             HospitalConfig(
                 hospital=str(h_dict["hospital"]),
@@ -154,6 +164,9 @@ def load_config(path: str | Path) -> AppConfig:
                 location_include_any_of=[
                     str(x) for x in (h_dict.get("location_include_any_of") or []) if str(x).strip()
                 ],
+                talcura_category=str(talcura_category).strip() if talcura_category else None,
+                talcura_employment_status=str(talcura_employment_status).strip() if talcura_employment_status else None,
+                entry_url=str(entry_url).strip() if entry_url else None,
             )
         )
 

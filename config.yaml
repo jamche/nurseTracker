@@ -3,20 +3,17 @@ role:
   # Example: ["Registered Nurse", "RN"] AND ["Operating Room", "Perioperative", ...]
   # Set to "any" to match postings that hit at least one group (e.g., any RN role),
   # or "all" to require all groups (e.g., RN + Operating Room/periop).
-  title_groups_mode: any
+  title_groups_mode: all
   title_groups_all:
-    - ["Registered Nurse", "RN"]
+    - ["Registered Nurse", "RN", "Registered Practical Nurse", "RPN"]
     - [
         "Operating Room",
         "OR",
         "Surgical Suite",
         "Surgical Suites",
-        "Surgical Services",
-        "Perioperative",
         "Day Surgery",
         "Endoscopy",
-        "Cystoscopy",
-        "Ophthalmology"
+        "Cath Lab"
       ]
 
   # Optional: exclude obvious non-target roles by title.
@@ -67,7 +64,18 @@ email:
   include_all_results: false
 
 hospitals:
-  - hospital: Scarborough General (SHN)
+  - hospital: Sunnybrook
+    type: talcura
+    url: https://sunnybrook.ca/join-our-team/current-opportunities/
+    talcura_category: Nursing
+    talcura_employment_status: Regular full-time
+  - hospital: Markham Stouffville (Oak Valley Health)
     type: workday
-    url: https://shn.wd10.myworkdayjobs.com/SHN_External_Career_Site
-  
+    url: https://oakvalleyhealth.wd10.myworkdayjobs.com/en-US/OakValleyHealth
+  - hospital: North York General Hospital
+    type: njoyn
+    # The njoyn host (clients.njoyn.com) is bot-protected; tokens are minted by NYGH on click.
+    # Configure entry_url to drive the click-through in a real browser via Playwright.
+    url: https://clients.njoyn.com/cl4/xweb/xweb.asp?CLID=77108&page=joblisting
+    entry_url: https://www.nygh.on.ca/careers-and-volunteers/career-opportunities/
+

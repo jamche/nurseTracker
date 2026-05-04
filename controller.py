@@ -15,6 +15,7 @@ from tenacity import RetryError
 
 from agents.lakeridge import LakeridgeERecruitAgent
 from agents.njoyn import NjoynAgent
+from agents.talcura import TalcuraAgent
 from agents.workday import WorkdayAgent
 from config import AppConfig, HospitalConfig, load_config
 from filtering import filter_postings, keyword_match
@@ -277,6 +278,8 @@ def _build_agent(hospital: HospitalConfig, *, http: HttpClient, logger):
         return NjoynAgent(hospital, http=http, logger=logger)
     if hospital.type == "erecruit":
         return LakeridgeERecruitAgent(hospital, http=http, logger=logger)
+    if hospital.type == "talcura":
+        return TalcuraAgent(hospital, http=http, logger=logger)
     raise ValueError(f"Unknown hospital type: {hospital.type}")
 
 

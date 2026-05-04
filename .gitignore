@@ -13,3 +13,5 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+.playwright-mcp/
+.claude/
