@@ -115,11 +115,13 @@ This updates `output/seen_urls.json` after a successful send, so the next run on
 
 ## Cron (daily)
 
-Example (runs at 7:10am daily; sends email):
+Example (runs at 7:10am daily; sends email only when there are new postings):
 
 ```cron
-10 7 * * * cd /Users/jamieyeung/Desktop/Projects/nurseTracker && /usr/bin/env bash -lc 'source .venv/bin/activate && python3 controller.py --config config.yaml --send-email >> logs/cron.log 2>&1'
+10 7 * * * cd /Users/jamieyeung/Desktop/Projects/nurseTracker && /usr/bin/env bash -lc 'source .venv/bin/activate && python3 controller.py --config config.yaml --send-email --skip-email-if-no-new >> logs/cron.log 2>&1'
 ```
+
+Drop `--skip-email-if-no-new` if you'd rather get a daily "0 new postings" digest.
 
 ## Scheduler (optional)
 
@@ -219,8 +221,8 @@ Notes:
 - GitHub cron is UTC; adjust the workflow cron to match your local timezone.
 - The runner is ephemeral; `output/seen_urls.json` is cached in the workflow to preserve “seen” state between runs (best-effort cache; if it’s evicted, you may resend older postings once).
 - Store SMTP values as GitHub Secrets (never commit `.env`).
-- If you want Playwright fallback, set repo variable `USE_PLAYWRIGHT=true` so the workflow installs Playwright/Chromium and enables browser mode.
+- The workflow installs Playwright + Chromium unconditionally (Sunnybrook and NYGH require it). `USE_PLAYWRIGHT=true` only enables the additional browser fallback for the Workday agent.
 
 Recommended repo setup:
-- **Variables**: `USE_PLAYWRIGHT=true`
+- **Variables** (optional): `USE_PLAYWRIGHT=true` to enable the Workday browser fallback.
 - **Secrets**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `EMAIL_TO` (optional: `EMAIL_CC`, `EMAIL_SUBJECT_PREFIX`, `EMAIL_INCLUDE_ALL_RESULTS`)

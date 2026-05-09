@@ -62,6 +62,11 @@ def main() -> int:
         action="store_true",
         help="Update output/seen_urls.json (and output/last_jobs.json) even if --send-email is not used",
     )
+    parser.add_argument(
+        "--skip-email-if-no-new",
+        action="store_true",
+        help="With --send-email, skip the SMTP send when there are no new postings since last run",
+    )
     args = parser.parse_args()
     return run(
         args.config,
@@ -69,6 +74,7 @@ def main() -> int:
         email_preview_path=str(args.email_preview_path) if args.email_preview_path else None,
         dump_raw=bool(args.dump_raw),
         update_last_state=bool(args.update_last_state),
+        skip_email_if_no_new=bool(args.skip_email_if_no_new),
     )
 
 
@@ -79,6 +85,7 @@ def run(
     email_preview_path: str | None,
     dump_raw: bool,
     update_last_state: bool,
+    skip_email_if_no_new: bool = False,
 ) -> int:
 
     load_dotenv()
@@ -210,7 +217,9 @@ def run(
         preview_path.write_text(html, encoding="utf-8")
         logger.info("Wrote email preview to %s", str(preview_path))
 
-    if send_email:
+    if send_email and skip_email_if_no_new and not new_jobs:
+        logger.info("No new postings since last run; skipping email (--skip-email-if-no-new).")
+    elif send_email:
         try:
             smtp = load_smtp_config_from_env()
             send_html_email(smtp=smtp, subject=subject, html=html)

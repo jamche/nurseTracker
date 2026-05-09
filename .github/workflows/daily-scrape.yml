@@ -31,9 +31,9 @@ jobs:
           path: output/seen_urls.json
           key: nurseTracker-seen-urls
 
-      # Only needed if you set USE_PLAYWRIGHT=true for JS-rendered boards.
-      - name: Install Playwright (optional)
-        if: ${{ vars.USE_PLAYWRIGHT == 'true' }}
+      # Required: Sunnybrook (Talcura iframe) and NYGH (njoyn behind Radware) are both
+      # Playwright-driven. USE_PLAYWRIGHT only gates the optional Workday browser fallback.
+      - name: Install Playwright
         run: |
           pip install -r requirements-browser.txt
           python -m playwright install --with-deps chromium
@@ -51,7 +51,7 @@ jobs:
           EMAIL_INCLUDE_ALL_RESULTS: ${{ secrets.EMAIL_INCLUDE_ALL_RESULTS }}
           USE_PLAYWRIGHT: ${{ vars.USE_PLAYWRIGHT }}
         run: |
-          python3 controller.py --config config.yaml --send-email
+          python3 controller.py --config config.yaml --send-email --skip-email-if-no-new
 
       - name: Upload outputs
         if: always()
